@@ -1,5 +1,9 @@
 # global linear model
 模型一次性考虑整个句子对应的词性序列(词性之间互相影响)，而不是刻画一个词 的词性，所以称为全局线性模型(Global Linear Model)
+
+## note
+please refer to fsrc and t6
+
 ## comparison with linear model
 + linear model: 假设词语之间的词性相互独立预测
 + global linear model: 假设词语之间的词性是有关联的

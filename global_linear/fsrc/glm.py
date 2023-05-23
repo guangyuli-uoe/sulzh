@@ -8,6 +8,11 @@ class GlobalLinearModel():
         self.epsilon = self.create_feature_space()
         self.d = len(self.epsilon)
         self.W = np.zeros(self.d)
+        # self.tag_dict = {v: k for k, v in enumerate([self.BOS] + list(self.dataset.tag_dict.keys()))}
+
+        self.tag_dict = self.dataset.tag_dict
+        self.reversed_tag_dict = {v: k for k, v in self.tag_dict.items()}
+
         self.bigram_features = [
             [self.create_tag_bigram_feature(prev_tag, tag) for prev_tag in self.dataset.tag_dict]
             for tag in self.dataset.tag_dict
@@ -119,6 +124,188 @@ class GlobalLinearModel():
 
     def viterbi_predict(self, sentence):
         T = len(sentence)
+        N = len(self.dataset.tag_dict)
+
+        dp = np.zeros((N, T))
+        path = np.zeros((N, T))
+
+        '''
+            transition matrix
+            i-->j
+        '''
+
+        tag_transition_matrix = np.zeros((N, N))
+        for i,t_i_1 in enumerate(self.tag_dict):
+            for j,t_i in enumerate(self.tag_dict):
+                a = self.create_tag_bigram_feature(t_i_1, t_i)
+                score = self.scorer(a)
+                tag_transition_matrix[i, j] = score
+
+        '''
+            initialization
+            填第0列
+        '''
+        init_fv = [self.create_feature_template(sentence, 0, self.BOS, tag)
+               for tag in self.dataset.tag_dict]
+
+        dp[:,0] = [self.scorer(fv) for fv in init_fv]
+
+        '''
+            recursion
+            填1到T-1列
+        '''
+        # for i in range(1, T): # 列
+        #
+        #     for j in range(N): # 行，current tag
+        #         current_tag = self.reversed_tag_dict[j]
+        #         candidates = []
+        #         # for j in range(N):
+        #         '''
+        #             算 dp[j, i]
+        #         '''
+        #         for k,tag_i in enumerate(self.tag_dict): # tag_i -> j
+        #             # emit_fv = self.create_feature_template(sentence,)
+        #             # emit_score =
+        #             # tmp_score = tag_transition_matrix[k,j] +
+        #             transition_score = tag_transition_matrix[k,j]
+        #             emit_fv = self.create_feature_template(sentence, j, tag_i, current_tag)
+        #             emit_score = self.scorer(emit_fv)
+        #             final_score = transition_score + emit_score + dp[k, i-1]
+
+        for t in range(1, T):
+
+            for s in range(N):
+                current_tag = self.reversed_tag_dict[s]
+                candidates = []
+                for s_ in range(N):
+                    # previous_tag = self.reversed_tag_dict[s_]
+                    transition_score = tag_transition_matrix[s_, s]
+                    emit_fv = self.ftpl_instantialize(sentence, t, current_tag)
+                    emit_score = self.scorer(emit_fv)
+                    final_score = transition_score + emit_score + dp[s_, t - 1]
+                    candidates.append(final_score)
+                dp[s, t] = np.max(candidates)
+                path[s, t] = np.argmax(candidates)
+
+        predict_n = np.argmax(dp[:,-1])
+        result = [predict_n]
+        for i in reversed(range(1, T)):
+            prev = path[predict_n, i]
+            result.append(prev)
+        return [self.reversed_tag_dict[i] for i in reversed(result)]
+
+    def viterbi_predict11(self, sentence):
+        T = len(sentence)
+        N = len(self.dataset.tag_dict)
+
+        dp = np.zeros((N, T))
+        path = np.zeros((N, T))
+
+        '''
+            transition matrix
+            i-->j
+        '''
+        self.bigram_features = [
+            [self.create_tag_bigram_feature(prev_tag, tag) for prev_tag in self.dataset.tag_dict]
+            for tag in self.dataset.tag_dict
+        ]
+        tag_transition_matrix = np.zeros((N, N))
+        for i, t_i_1 in enumerate(self.tag_dict):
+            for j, t_i in enumerate(self.tag_dict):
+                a = self.create_tag_bigram_feature(t_i_1, t_i)
+                score = self.scorer(a)
+                tag_transition_matrix[i, j] = score
+        '''
+            initialization
+            填第0列
+        '''
+        init_fv = [self.create_feature_template(sentence, 0, self.BOS, tag)
+                   for tag in self.dataset.tag_dict]
+        dp[:, 0] = [self.scorer(fv) for fv in init_fv]
+
+        '''
+            emition matrix
+        '''
+        emit_matrix = np.zeros((N, T))
+        for t in range(1, T):
+            for row,tag in enumerate(self.tag_dict):
+                fv = self.ftpl_instantialize(sentence, t, tag)
+                emit_score = self.scorer(fv)
+                emit_matrix[row,t] = emit_score
+        '''
+            recursion
+            1-T
+        '''
+        for t in range(1, T):
+            # emit_score = np.array([
+            #     self.scorer(self.ftpl_instantialize(sentence, t, tag))
+            #     for tag in self.dataset.tag_dict
+            # ])
+            # emit_score = emit_matrix[:,t].reshape(-1, 1)# （31， 1）
+            emit_score = emit_matrix[:, t].reshape(1, -1) # (1, 31)
+
+            scores = tag_transition_matrix + emit_score + dp[:,t-1, None]
+            # dp[:, t-1].reshape(-1, 1)
+            # print(scores.shape)
+            # exit()
+            path[:,t] = np.argmax(scores, axis=0)
+            dp[:,t] = np.max(scores, axis=0)
+
+        predict_n = np.argmax(dp[:, -1])
+        # print(predict_n)
+        result = [predict_n]
+        for i in reversed(range(1, T)):
+            predict_n = path[predict_n, i]
+            # print(result)
+            result.append(predict_n)
+        return [self.reversed_tag_dict[i] for i in reversed(result)]
+
+
+
+
+
+
+
+
+
+    def viterbi_predict02(self, sentence):
+
+        newsentence = ['$'] + sentence
+        T = len(newsentence)
+        # T = len(sentence)
+        N = len(self.tag_dict)
+
+        # dp = np.zeros((N, T))
+        # path = np.zeros((N, T))
+        tb = np.zeros((N, T))
+        bp = np.zeros((N, T), dtype='int')  # path
+
+        tb[0, 0] = 0
+        '''
+            sentence: 1-n
+            newsentence: 0-n
+        '''
+        for i in range(1, T): # 1, n
+            for t in range(1, N): # current tag
+                for t_prime in range(N): # previous tag
+                    fv = self.create_feature_template(sentence, i, self.reversed_tag_dict[t_prime], self.reversed_tag_dict[t])
+                    score = self.scorer(fv)
+                    if tb[t_prime, i-1] + score > tb[t, i]:
+                        tb[t, i] = tb[t_prime, i-1] + score
+                        bp[t, i] = t_prime
+
+        y_n = np.argmax(tb[:,-1])
+        output = [y_n]
+        for i in reversed(range(2, T)):
+            y = bp[y_n, i]
+            output.append(y)
+
+        # reversed_tag_dict = {v: k for k, v in self.tag_dict.items()}
+        # print(reversed_tag_dict)
+        return [self.reversed_tag_dict[i] for i in reversed(output)]
+
+    def viterbi_predict111(self, sentence):
+        T = len(sentence)
         delta = np.zeros((T, len(self.dataset.tag_dict)))
         paths = np.zeros((T, len(self.dataset.tag_dict)), dtype='int')
 
@@ -161,15 +348,20 @@ class GlobalLinearModel():
         # print(reversed_tag_dict)
         return [reversed_tag_dict[i] for i in reversed(predict)]
 
+
     def online_training(self, epochs):
         sent_list = self.dataset.sent_word_list
         sent_tag_list = self.dataset.sent_tag_list
 
         for m in range(epochs):
+            # print(m)
             for j in range(len(sent_list)):
+                # print(j)
                 sentence = sent_list[j]
                 tags = sent_tag_list[j]
-                predict = self.viterbi_predict(sentence)
+                predict = self.viterbi_predict111(sentence)
+                # print(f'p: {predict}')
+                # print(f't: {tags}')
 
                 if predict != tags:
                     for i in range(len(tags)):
@@ -205,7 +397,7 @@ class GlobalLinearModel():
         correct_tag_num = 0
         for j in range(len(sent_word_list)):
             gold_tag_list = sent_tag_list[j]
-            predict_tags = self.viterbi_predict(sent_word_list[j])
+            predict_tags = self.viterbi_predict111(sent_word_list[j])
             # print(gold_tag_list)
             # print(predict_tags)
             # exit()
@@ -214,4 +406,8 @@ class GlobalLinearModel():
                 if predict_tags[i] == gold_tag_list[i]:
                     correct_tag_num += 1
         print(f'acc: {correct_tag_num/total_tag_num}')
+
+
+
+
 
